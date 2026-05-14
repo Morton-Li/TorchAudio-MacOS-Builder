@@ -52,6 +52,7 @@ jobs:
           TORCH_VERSION: ${{ github.event.inputs.torch-version }}
         run: |
           brew install ccache
+          
           sudo xcode-select --switch /Applications/Xcode_16.4.app
 
           DEPLOYMENT_TARGET=$(echo $MACOSX_DEPLOYMENT_TARGET | sed 's/\./_/g')
@@ -63,7 +64,8 @@ jobs:
           source venv/bin/activate
           pip install --upgrade pip setuptools wheel numpy
           pip install torch-${TORCH_VERSION}-cp${PY_SHORT}-cp${PY_SHORT}-macosx_${DEPLOYMENT_TARGET}_${CMAKE_OSX_ARCHITECTURES}.whl
-          pip install --force-reinstall cmake==3.31.6 ninja
+          pip install --force-reinstall cmake==3.25.2
+          pip install mkl-static==2022.2.0 mkl-include==2022.2.0
 
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
