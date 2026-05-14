@@ -1,0 +1,136 @@
+name: Build TorchAudio
+
+on:
+  workflow_dispatch:
+
+env:
+  BUILD_VERSION: "2.3.0"
+  TORCH_VERSION: "2.3.0"
+
+jobs:
+  build:
+    runs-on: macos-15-intel
+    strategy:
+      matrix:
+        python_version: [ 3.11, 3.12 ]
+    name: Build TorchAudio for Python ${{ matrix.python_version }}
+    steps:
+      - name: Restore TorchAudio source from cache
+        id: restore-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: audio
+          key: audio-v${{ env.BUILD_VERSION }}
+
+      - name: Clone TorchAudio repo
+        if: steps.restore-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "v${{ env.BUILD_VERSION }}" --recursive https://github.com/pytorch/audio.git audio
+          git -C audio submodule update --init --recursive --depth 1 || git -C audio submodule update --init --recursive --depth 10 || git -C audio submodule update --init --recursive
+
+      - name: Save TorchAudio source to cache
+        id: cache-save
+        if: steps.restore-cache.outputs.cache-hit != 'true' && matrix.python_version == '3.12'
+        uses: actions/cache/save@v4
+        with:
+          path: audio
+          key: audio-v${{ env.BUILD_VERSION }}
+
+      - name: Build wheel
+        env:
+          CMAKE_OSX_ARCHITECTURES: "x86_64"
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+          USE_CUDA: "OFF"
+          USE_ROCM: "OFF"
+          USE_OPENMP: "ON"
+          CC: "/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang"
+          CXX: "/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++"
+        run: |
+          set -e
+          brew install ninja pkg-config libuv
+          sudo xcode-select --switch /Applications/Xcode_16.4.app
+
+          export MAX_JOBS=$(sysctl -n hw.logicalcpu)
+          if [ "$MAX_JOBS" -gt 4 ]; then
+              export MAX_JOBS=4
+          fi
+
+          export _PYTHON_HOST_PLATFORM="macosx-$MACOSX_DEPLOYMENT_TARGET-$CMAKE_OSX_ARCHITECTURES"
+          export SDKROOT=$(xcrun --sdk macosx --show-sdk-path)
+          export LDSHARED="clang -bundle -undefined dynamic_lookup -isysroot $SDKROOT -arch $CMAKE_OSX_ARCHITECTURES"
+
+          mkdir -p wheels
+
+          PY_SHORT=$(echo "${{ matrix.python_version }}" | sed 's/\.//')
+          DEPLOYMENT_TARGET=$(echo $MACOSX_DEPLOYMENT_TARGET | sed 's/\./_/g')
+
+          wget https://github.com/Morton-Li/PyTorch-MacOS-Builder/releases/download/v${TORCH_VERSION}/torch-${TORCH_VERSION}-cp${PY_SHORT}-cp${PY_SHORT}-macosx_${DEPLOYMENT_TARGET}_${CMAKE_OSX_ARCHITECTURES}.whl
+
+          python${{ matrix.python_version }} -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip setuptools wheel
+          pip install torch-${TORCH_VERSION}-cp${PY_SHORT}-cp${PY_SHORT}-macosx_${DEPLOYMENT_TARGET}_${CMAKE_OSX_ARCHITECTURES}.whl
+          pip install --force-reinstall cmake==3.25.2 numpy==1.26.4
+
+          export CMAKE_PREFIX_PATH="$(realpath venv/lib)"
+          export CMAKE_INCLUDE_PATH="$(realpath venv/include)"
+
+          wget -O "$($CC -print-resource-dir)/include/omp.h" https://github.com/intel/llvm/raw/refs/heads/sycl/openmp/runtime/src/include/omp.h.var
+
+          cd audio
+          git clean -xfd
+
+          export CMAKE_OSX_SYSROOT="$(xcrun --sdk macosx --show-sdk-path)"
+
+          python setup.py bdist_wheel
+
+          cp dist/*.whl ../wheels/
+          cd ..
+
+          if [ "$(ls wheels/*.whl 2>/dev/null | wc -l)" -eq 0 ]; then
+            echo "No wheel built. Tag will not be created."
+            exit 1
+          fi
+
+      - name: Test TorchAudio wheel
+        env:
+          CMAKE_OSX_ARCHITECTURES: "x86_64"
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+        run: |
+          set -e
+          PY_SHORT=$(echo "${{ matrix.python_version }}" | sed 's/\.//')
+          DEPLOYMENT_TARGET=$(echo $MACOSX_DEPLOYMENT_TARGET | sed 's/\./_/g')
+
+          python${{ matrix.python_version }} -m venv test-venv
+          source test-venv/bin/activate
+          pip install --upgrade pip setuptools
+          pip install torch-${TORCH_VERSION}-cp${PY_SHORT}-cp${PY_SHORT}-macosx_${DEPLOYMENT_TARGET}_${CMAKE_OSX_ARCHITECTURES}.whl
+          pip install wheels/*.whl
+          python -c "import torchaudio; print(f'TorchAudio version: {torchaudio.__version__}')"
+
+      - name: Upload wheels as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: audio-${{ env.BUILD_VERSION }}-py${{ matrix.python_version }}-macosx-wheel
+          path: wheels/*.whl
+
+  release:
+    needs: [ build ]
+    if: (needs.build.result == 'success') && (startsWith(github.ref, 'refs/heads/main'))
+    runs-on: macos-15-intel
+    name: Create release and upload wheels
+    steps:
+      - name: Download all wheel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: wheels
+          merge-multiple: true
+
+      - name: Create release and upload wheels
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.BUILD_VERSION }}
+          name: "TorchAudio ${{ env.BUILD_VERSION }} Release"
+          files: wheels/*.whl
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
