@@ -109,7 +109,7 @@ jobs:
 
           python${{ matrix.python_version }} -m venv test-venv
           source test-venv/bin/activate
-          pip install --upgrade pip setuptools
+          pip install --upgrade pip setuptools numpy==1.26.4
           pip install torch-${TORCH_VERSION}-cp${PY_SHORT}-cp${PY_SHORT}-macosx_${DEPLOYMENT_TARGET}_${CMAKE_OSX_ARCHITECTURES}.whl
           pip install wheels/*.whl
           python -c "import torchaudio; print(f'TorchAudio version: {torchaudio.__version__}')"
