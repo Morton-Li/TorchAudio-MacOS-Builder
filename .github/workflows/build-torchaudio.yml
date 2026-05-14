@@ -43,6 +43,11 @@ jobs:
           USE_CUDA: "OFF"
           USE_ROCM: "OFF"
           USE_OPENMP: "ON"
+          BUILD_SOX: "ON"
+          BUILD_RIR: "ON"
+          BUILD_RNNT: "ON"
+          BUILD_ALIGN: "ON"
+          USE_FFMPEG: "ON"
           CC: "/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang"
           CXX: "/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++"
         run: |
@@ -71,6 +76,7 @@ jobs:
           pip install --upgrade pip setuptools wheel
           pip install torch-${TORCH_VERSION}-cp${PY_SHORT}-cp${PY_SHORT}-macosx_${DEPLOYMENT_TARGET}_${CMAKE_OSX_ARCHITECTURES}.whl
           pip install --force-reinstall cmake==3.25.2 numpy==1.26.4
+          pip install mkl-static==2022.2.0 mkl-include==2022.2.0
 
           export CMAKE_PREFIX_PATH="$(realpath venv/lib)"
           export CMAKE_INCLUDE_PATH="$(realpath venv/include)"
