@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
 
 env:
-  BUILD_VERSION: "2.7.0"
-  TORCH_VERSION: "2.7.0"
+  BUILD_VERSION: "2.7.1"
+  TORCH_VERSION: "2.7.1"
 
 jobs:
   build:
