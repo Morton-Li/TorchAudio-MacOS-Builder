@@ -4,15 +4,15 @@ on:
   workflow_dispatch:
 
 env:
-  BUILD_VERSION: "2.9.0"
-  TORCH_VERSION: "2.9.0"
+  BUILD_VERSION: "2.9.1"
+  TORCH_VERSION: "2.9.1"
 
 jobs:
   build:
     runs-on: macos-15-intel
     strategy:
       matrix:
-        python_version: [ 3.11, 3.12, 3.13 ]
+        python_version: [ '3.11', '3.12', '3.13', '3.14' ]
     name: Build TorchAudio for Python ${{ matrix.python_version }}
     steps:
       - name: Restore TorchAudio source from cache
