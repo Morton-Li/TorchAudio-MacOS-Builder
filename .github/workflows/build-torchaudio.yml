@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
 
 env:
-  BUILD_VERSION: "2.9.1"
-  TORCH_VERSION: "2.9.1"
+  BUILD_VERSION: "2.10.0"
+  TORCH_VERSION: "2.10.0"
 
 jobs:
   build:
@@ -74,7 +74,7 @@ jobs:
           source venv/bin/activate
           pip install --upgrade pip setuptools wheel
           pip install torch-${TORCH_VERSION}-cp${PY_SHORT}-cp${PY_SHORT}-macosx_${DEPLOYMENT_TARGET}_${CMAKE_OSX_ARCHITECTURES}.whl
-          pip install --force-reinstall cmake==3.31.6 numpy==2.3.2
+          pip install --force-reinstall cmake==3.31.6 numpy==2.4.1
           pip install mkl-static==2023.2.2 mkl-include==2023.2.2
 
           export CMAKE_PREFIX_PATH="$(realpath venv/lib)"
@@ -108,7 +108,7 @@ jobs:
 
           python${{ matrix.python_version }} -m venv test-venv
           source test-venv/bin/activate
-          pip install --upgrade pip setuptools numpy==2.3.2
+          pip install --upgrade pip setuptools numpy==2.4.1
           pip install torch-${TORCH_VERSION}-cp${PY_SHORT}-cp${PY_SHORT}-macosx_${DEPLOYMENT_TARGET}_${CMAKE_OSX_ARCHITECTURES}.whl
           pip install wheels/*.whl
           python -c "import torchaudio; print(f'TorchAudio version: {torchaudio.__version__}')"
