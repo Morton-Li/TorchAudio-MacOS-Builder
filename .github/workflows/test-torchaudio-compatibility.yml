@@ -1,0 +1,131 @@
+name: Test TorchAudio Compatibility
+
+on:
+  workflow_dispatch:
+    inputs:
+      audio-version:
+        description: 'Existing TorchAudio release version'
+        required: true
+        default: '2.11.0'
+        type: string
+      torch-version:
+        description: 'Existing custom PyTorch release version'
+        required: true
+        default: '2.14.1'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test existing wheels for Python ${{ matrix.python-version }}
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13', '3.14']
+    env:
+      AUDIO_VERSION: ${{ inputs.audio-version }}
+      TORCH_VERSION: ${{ inputs.torch-version }}
+      PYTHON_VERSION: ${{ matrix.python-version }}
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Download existing release wheels
+        shell: bash
+        run: |
+          set -euo pipefail
+          for version in "$AUDIO_VERSION" "$TORCH_VERSION"; do
+            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Expected a stable release version (major.minor.patch)."
+              exit 1
+            fi
+          done
+
+          mkdir -p wheels
+          PY_SHORT="${PYTHON_VERSION//./}"
+          AUDIO_WHEEL="torchaudio-${AUDIO_VERSION}-cp${PY_SHORT}-cp${PY_SHORT}-macosx_11_0_x86_64.whl"
+          TORCH_WHEEL="torch-${TORCH_VERSION}-cp${PY_SHORT}-cp${PY_SHORT}-macosx_11_0_x86_64.whl"
+
+          curl --fail --location --retry 3 --output "wheels/$AUDIO_WHEEL" \
+            "https://github.com/Morton-Li/TorchAudio-MacOS-Builder/releases/download/v${AUDIO_VERSION}/$AUDIO_WHEEL"
+          curl --fail --location --retry 3 --output "wheels/$TORCH_WHEEL" \
+            "https://github.com/Morton-Li/PyTorch-MacOS-Builder/releases/download/v${TORCH_VERSION}/$TORCH_WHEEL"
+          shasum -a 256 wheels/*.whl
+
+      - name: Install existing wheels
+        run: |
+          python -m venv test-venv
+          source test-venv/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install numpy wheels/*.whl
+          python -m pip check
+
+      - name: Test imports and native CPU operators
+        run: |
+          source test-venv/bin/activate
+          python - <<'PY'
+          import os
+          import platform
+          import sys
+          from pathlib import Path
+
+          import torch
+          import torchaudio
+          from torchaudio import functional as F
+
+          assert platform.machine() == "x86_64", platform.machine()
+          assert platform.python_version().startswith(os.environ["PYTHON_VERSION"] + ".")
+          assert torch.__version__.split("+", 1)[0] == os.environ["TORCH_VERSION"]
+          assert torchaudio.__version__.split("+", 1)[0] == os.environ["AUDIO_VERSION"]
+          print(f"Python: {sys.version}")
+          print(f"PyTorch: {torch.__version__}; TorchAudio: {torchaudio.__version__}")
+          print(f"TorchAudio source: {torchaudio.version.git_version}")
+
+          waveform = torch.tensor([[0.2, -0.4, 0.6, -0.8]], dtype=torch.float32)
+          coefficients = torch.tensor([1.0, 0.0])
+          filtered = F.lfilter(waveform, coefficients, coefficients, clamp=False)
+          torch.testing.assert_close(filtered, waveform)
+          print("PASS: lfilter identity filter")
+
+          log_probs = torch.tensor([
+              [[4.0, 0.0, 0.0], [0.0, 4.0, 0.0],
+               [4.0, 0.0, 0.0], [0.0, 0.0, 4.0]]
+          ]).log_softmax(-1)
+          alignment, scores = F.forced_align(
+              log_probs, torch.tensor([[1, 2]], dtype=torch.int64), blank=0
+          )
+          torch.testing.assert_close(alignment, torch.tensor([[0, 1, 0, 2]]))
+          assert torch.isfinite(scores).all()
+          print("PASS: forced_align native alignment")
+
+          torch.manual_seed(0)
+          logits = torch.randn(1, 3, 3, 4, requires_grad=True)
+          loss = F.rnnt_loss(
+              logits,
+              torch.tensor([[1, 2]], dtype=torch.int32),
+              torch.tensor([3], dtype=torch.int32),
+              torch.tensor([2], dtype=torch.int32),
+              blank=3,
+          )
+          assert torch.isfinite(loss).all()
+          loss.backward()
+          assert logits.grad is not None and torch.isfinite(logits.grad).all()
+          print(f"PASS: RNNT loss and backward (loss={loss.item():.6f})")
+
+          summary = (
+              f"## Existing wheel compatibility passed\n\n"
+              f"- Python: {platform.python_version()} (x86_64)\n"
+              f"- TorchAudio: {torchaudio.__version__}\n"
+              f"- PyTorch: {torch.__version__}\n"
+              "- Checks: imports, lfilter, forced_align, RNNT loss and backward\n"
+              "- Audio file I/O and TorchCodec were not tested.\n"
+          )
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as file:
+              file.write(summary)
+          PY
