@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'TorchAudio version (e.g., 2.11.0)'
+        description: 'TorchAudio version (e.g., 2.11.1)'
         required: true
-        default: ''
+        default: '2.11.1'
       torch-version:
-        description: 'PyTorch version (e.g., 2.11.0)'
+        description: 'PyTorch version (e.g., 2.15.0)'
         required: true
-        default: '2.11.0'
+        default: '2.15.0'
       run-on:
         description: 'Run on which OS?'
         required: true
