@@ -6,12 +6,12 @@ on:
       audio-version:
         description: 'Existing TorchAudio release version'
         required: true
-        default: '2.11.0'
+        default: '2.11.1'
         type: string
       torch-version:
         description: 'Existing custom PyTorch release version'
         required: true
-        default: '2.14.1'
+        default: '2.15.0'
         type: string
 
 permissions:
@@ -35,6 +35,7 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
+          architecture: x64
 
       - name: Download existing release wheels
         shell: bash
@@ -49,7 +50,14 @@ jobs:
 
           mkdir -p wheels
           PY_SHORT="${PYTHON_VERSION//./}"
-          AUDIO_WHEEL="torchaudio-${AUDIO_VERSION}-cp${PY_SHORT}-cp${PY_SHORT}-macosx_11_0_x86_64.whl"
+          AUDIO_RELEASE=$(curl --fail --silent --show-error --location --retry 3 \
+            "https://api.github.com/repos/Morton-Li/TorchAudio-MacOS-Builder/releases/tags/v${AUDIO_VERSION}")
+          AUDIO_WHEEL=$(echo "$AUDIO_RELEASE" | jq -er \
+            --arg portable "torchaudio-${AUDIO_VERSION}-py3-none-macosx_11_0_x86_64.whl" \
+            --arg legacy "torchaudio-${AUDIO_VERSION}-cp${PY_SHORT}-cp${PY_SHORT}-macosx_11_0_x86_64.whl" \
+            '[.assets[].name] as $names | if $names | index($portable) then $portable
+             elif $names | index($legacy) then $legacy
+             else error("No compatible Intel macOS TorchAudio wheel in release") end')
           TORCH_WHEEL="torch-${TORCH_VERSION}-cp${PY_SHORT}-cp${PY_SHORT}-macosx_11_0_x86_64.whl"
 
           curl --fail --location --retry 3 --output "wheels/$AUDIO_WHEEL" \
